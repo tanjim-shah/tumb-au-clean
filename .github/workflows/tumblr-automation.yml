@@ -87,11 +87,11 @@ jobs:
         TUMBLR_OAUTH_TOKEN: ${{ secrets.TUMBLR_OAUTH_TOKEN }}
         TUMBLR_OAUTH_TOKEN_SECRET: ${{ secrets.TUMBLR_OAUTH_TOKEN_SECRET }}
         TUMBLR_BLOG_NAME: ${{ secrets.TUMBLR_BLOG_NAME }}
-        EMAIL_USER: ${{ secrets.EMAIL_USER }}
+        EMAIL_USER: limon.working@gmail.com
         EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
-        NOTIFICATION_EMAIL: ${{ secrets.NOTIFICATION_EMAIL }}
-        SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
-        SMTP_PORT: ${{ secrets.SMTP_PORT }}
+        NOTIFICATION_EMAIL: beacleaner0@gmail.com
+        SMTP_SERVER: smtp.gmail.com
+        SMTP_PORT: 587
       run: python .github/scripts/post_to_tumblr.py
     
     - name: Commit and push changes
