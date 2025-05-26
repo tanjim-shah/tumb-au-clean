@@ -63,7 +63,6 @@ jobs:
     if: ${{ github.event_name == 'workflow_dispatch' && (github.event.inputs.action == 'post' || github.event.inputs.action == 'both') || (github.event_name == 'schedule' && github.event.schedule == '0 */3 * * *') }}
     runs-on: ubuntu-latest
     needs: [generate-posts]
-    condition: always()
     
     steps:
     - name: Checkout repository
@@ -128,3 +127,20 @@ jobs:
         fi
         
         if [ -f "data/processed_urls.txt" ]; then
+          # Keep last 1000 URLs
+          tail -n 1000 data/processed_urls.txt > temp_urls.txt
+          mv temp_urls.txt data/processed_urls.txt
+          echo "Cleaned up old processed URLs"
+        fi
+    
+    - name: Commit cleanup changes
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add data/
+        if git diff --staged --quiet; then
+          echo "No changes to commit"
+        else
+          git commit -m "Clean up old logs - $(date '+%Y-%m-%d %H:%M:%S')"
+          git push
+        fi
