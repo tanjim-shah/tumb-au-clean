@@ -20,7 +20,7 @@ on:
 
 jobs:
   generate-posts:
-    if: ${{ github.event_name == 'workflow_dispatch' && (github.event.inputs.action == 'generate' || github.event.inputs.action == 'both') || (github.event_name == 'schedule' && github.event.schedule == '0 9 * * *') }}
+    if: ${{ github.event_name == 'workflow_dispatch' && (github.event.inputs.action == 'generate' || github.event.inputs.action == 'both') || (github.event_name == 'schedule' && github.event.action == 'scheduled') }}
     runs-on: ubuntu-latest
     
     steps:
@@ -60,9 +60,9 @@ jobs:
         fi
 
   post-to-tumblr:
-    if: ${{ github.event_name == 'workflow_dispatch' && (github.event.inputs.action == 'post' || github.event.inputs.action == 'both') || (github.event_name == 'schedule' && github.event.schedule == '0 */3 * * *') }}
+    # Removed the needs dependency to allow independent execution
+    if: ${{ github.event_name == 'workflow_dispatch' && (github.event.inputs.action == 'post' || github.event.inputs.action == 'both') || github.event_name == 'schedule' }}
     runs-on: ubuntu-latest
-    needs: [generate-posts]
     
     steps:
     - name: Checkout repository
@@ -108,7 +108,8 @@ jobs:
 
   cleanup-old-logs:
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'schedule' && github.event.schedule == '0 9 * * *' }}
+    # This will run on both scheduled events, but only clean up once per day
+    if: ${{ github.event_name == 'schedule' }}
     
     steps:
     - name: Checkout repository
