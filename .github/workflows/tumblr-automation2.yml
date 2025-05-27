@@ -1,0 +1,119 @@
+name: Tumblr Automation (OAuth 2.0)
+
+on:
+  schedule:
+    # Generate posts daily at 9 AM UTC
+    - cron: '0 9 * * *'
+    # Post to Tumblr every 3 hours
+    - cron: '0 */3 * * *'
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Action to perform'
+        required: true
+        default: 'post'
+        type: choice
+        options:
+        - generate
+        - post
+        - both
+
+jobs:
+  generate-posts:
+    if: ${{ github.event_name == 'workflow_dispatch' && (github.event.inputs.action == 'generate' || github.event.inputs.action == 'both') || (github.event_name == 'schedule' && github.event.action == 'scheduled') }}
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install google-genai requests
+    
+    - name: Create data directory
+      run: mkdir -p data
+    
+    - name: Generate Tumblr posts
+      env:
+        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      run: python .github/scripts/generate_tumblr_posts.py
+    
+    - name: Commit and push changes
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add data/
+        if git diff --staged --quiet; then
+          echo "No changes to commit"
+        else
+          git commit -m "Add generated Tumblr posts - $(date '+%Y-%m-%d %H:%M:%S')"
+          git push
+        fi
+
+  post-to-tumblr:
+    if: ${{ github.event_name == 'workflow_dispatch' && (github.event.inputs.action == 'post' || github.event.inputs.action == 'both') || github.event_name == 'schedule' }}
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install requests
+    
+    - name: Post to Tumblr (OAuth 2.0)
+      env:
+        TUMBLR_CLIENT_ID: ${{ secrets.TUMBLR_CLIENT_ID }}
+        TUMBLR_CLIENT_SECRET: ${{ secrets.TUMBLR_CLIENT_SECRET }}
+        TUMBLR_BLOG_NAME: ${{ secrets.TUMBLR_BLOG_NAME }}
+        EMAIL_USER: limon.working@gmail.com
+        EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+        NOTIFICATION_EMAIL: beacleaner0@gmail.com
+        SMTP_SERVER: smtp.gmail.com
+        SMTP_PORT: 587
+      run: python .github/scripts/post_to_tumblr_oauth2.py
+    
+    - name: Commit and push changes
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add data/
+        if git diff --staged --quiet; then
+          echo "No changes to commit"
+        else
+          git commit -m "Update posted logs - $(date '+%Y-%m-%d %H:%M:%S')"
+          git push
+        fi
+
+  cleanup-old-logs:
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'schedule' }}
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Clean up old logs (keep last 1000 entries)
+      run: |
+        if [ -f "data/posted_logs.csv" ]; then
+          head -
