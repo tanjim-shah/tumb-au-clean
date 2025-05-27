@@ -1,4 +1,4 @@
-name: Tumblr Automation (OAuth 2.0)
+name: Tumblr Automation (OAuth 2.0) - Enhanced
 
 on:
   schedule:
@@ -17,103 +17,286 @@ on:
         - generate
         - post
         - both
+        - test
+      force_post:
+        description: 'Force post even if not scheduled'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  PYTHON_VERSION: '3.11'
 
 jobs:
   generate-posts:
-    if: ${{ github.event_name == 'workflow_dispatch' && (github.event.inputs.action == 'generate' || github.event.inputs.action == 'both') || (github.event_name == 'schedule' && github.event.action == 'scheduled') }}
+    if: |
+      github.event_name == 'workflow_dispatch' && 
+      (github.event.inputs.action == 'generate' || github.event.inputs.action == 'both') ||
+      (github.event_name == 'schedule' && github.event.schedule == '0 9 * * *')
     runs-on: ubuntu-latest
     
     steps:
-    - name: Checkout repository
+    - name: 📥 Checkout repository
       uses: actions/checkout@v4
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
+        fetch-depth: 0
     
-    - name: Set up Python
+    - name: 🐍 Set up Python
       uses: actions/setup-python@v4
       with:
-        python-version: '3.11'
+        python-version: ${{ env.PYTHON_VERSION }}
     
-    - name: Install dependencies
+    - name: 📦 Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install google-genai requests
+        pip install google-genai requests beautifulsoup4 lxml
     
-    - name: Create data directory
+    - name: 📁 Create data directory
       run: mkdir -p data
     
-    - name: Generate Tumblr posts
+    - name: 🤖 Generate Tumblr posts
       env:
         GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-      run: python .github/scripts/generate_tumblr_posts.py
+      run: |
+        if [ -f ".github/scripts/generate_tumblr_posts.py" ]; then
+          python .github/scripts/generate_tumblr_posts.py
+        else
+          echo "⚠️ Post generation script not found"
+          echo "Please add .github/scripts/generate_tumblr_posts.py to your repository"
+        fi
     
-    - name: Commit and push changes
+    - name: 💾 Commit and push changes
       run: |
         git config --local user.email "action@github.com"
-        git config --local user.name "GitHub Action"
+        git config --local user.name "GitHub Action Bot"
         git add data/
         if git diff --staged --quiet; then
-          echo "No changes to commit"
+          echo "ℹ️ No new posts generated"
         else
-          git commit -m "Add generated Tumblr posts - $(date '+%Y-%m-%d %H:%M:%S')"
+          git commit -m "🤖 Add generated Tumblr posts - $(date '+%Y-%m-%d %H:%M:%S UTC')"
           git push
+          echo "✅ New posts committed and pushed"
         fi
 
-  post-to-tumblr:
-    if: ${{ github.event_name == 'workflow_dispatch' && (github.event.inputs.action == 'post' || github.event.inputs.action == 'both') || github.event_name == 'schedule' }}
+  test-connection:
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'test'
     runs-on: ubuntu-latest
     
     steps:
-    - name: Checkout repository
+    - name: 📥 Checkout repository
       uses: actions/checkout@v4
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
     
-    - name: Set up Python
+    - name: 🐍 Set up Python
       uses: actions/setup-python@v4
       with:
-        python-version: '3.11'
+        python-version: ${{ env.PYTHON_VERSION }}
     
-    - name: Install dependencies
+    - name: 📦 Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install requests
     
-    - name: Post to Tumblr (OAuth 2.0)
+    - name: 🧪 Test Tumblr API connection
       env:
         TUMBLR_CLIENT_ID: ${{ secrets.TUMBLR_CLIENT_ID }}
         TUMBLR_CLIENT_SECRET: ${{ secrets.TUMBLR_CLIENT_SECRET }}
         TUMBLR_BLOG_NAME: ${{ secrets.TUMBLR_BLOG_NAME }}
-        EMAIL_USER: limon.working@gmail.com
+      run: |
+        python -c "
+        import sys
+        sys.path.append('.github/scripts')
+        
+        try:
+            from post_to_tumblr_oauth2_improved import TumblrOAuth2Poster
+            poster = TumblrOAuth2Poster()
+            if poster.access_token:
+                print('✅ Token is available')
+                if poster.test_api_connection():
+                    print('✅ API connection successful')
+                else:
+                    print('❌ API connection failed')
+                    sys.exit(1)
+            else:
+                print('❌ No valid token available')
+                sys.exit(1)
+        except Exception as e:
+            print(f'❌ Test failed: {e}')
+            sys.exit(1)
+        "
+
+  post-to-tumblr:
+    if: |
+      github.event_name == 'workflow_dispatch' && 
+      (github.event.inputs.action == 'post' || github.event.inputs.action == 'both') ||
+      (github.event_name == 'schedule' && github.event.schedule != '0 9 * * *')
+    runs-on: ubuntu-latest
+    needs: [generate-posts]
+    if: always() && (needs.generate-posts.result == 'success' || needs.generate-posts.result == 'skipped')
+    
+    steps:
+    - name: 📥 Checkout repository
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        fetch-depth: 0
+    
+    - name: 🔄 Pull latest changes
+      run: git pull origin main || git pull origin master || true
+    
+    - name: 🐍 Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+    
+    - name: 📦 Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install requests
+    
+    - name: 📁 Ensure data directory exists
+      run: mkdir -p data
+    
+    - name: 📊 Check pending posts
+      run: |
+        if [ -f "data/pending_posts.csv" ]; then
+          echo "📄 Pending posts file found"
+          echo "Posts in queue: $(tail -n +2 data/pending_posts.csv 2>/dev/null | wc -l || echo '0')"
+          echo "Next few scheduled posts:"
+          head -5 data/pending_posts.csv || echo "No posts found"
+        else
+          echo "⚠️ No pending posts file found"
+        fi
+    
+    - name: 🚀 Post to Tumblr (OAuth 2.0)
+      env:
+        TUMBLR_CLIENT_ID: ${{ secrets.TUMBLR_CLIENT_ID }}
+        TUMBLR_CLIENT_SECRET: ${{ secrets.TUMBLR_CLIENT_SECRET }}
+        TUMBLR_BLOG_NAME: ${{ secrets.TUMBLR_BLOG_NAME }}
+        EMAIL_USER: ${{ secrets.EMAIL_USER }}
         EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
-        NOTIFICATION_EMAIL: beacleaner0@gmail.com
+        NOTIFICATION_EMAIL: ${{ secrets.NOTIFICATION_EMAIL }}
         SMTP_SERVER: smtp.gmail.com
         SMTP_PORT: 587
-      run: python .github/scripts/post_to_tumblr_oauth2.py
+        FORCE_POST: ${{ github.event.inputs.force_post }}
+      run: |
+        if [ -f ".github/scripts/post_to_tumblr_oauth2_improved.py" ]; then
+          python .github/scripts/post_to_tumblr_oauth2_improved.py
+        elif [ -f ".github/scripts/post_to_tumblr_oauth2.py" ]; then
+          echo "⚠️ Using original script (consider upgrading to improved version)"
+          python .github/scripts/post_to_tumblr_oauth2.py
+        else
+          echo "❌ No posting script found"
+          exit 1
+        fi
     
-    - name: Commit and push changes
+    - name: 💾 Commit and push changes
       run: |
         git config --local user.email "action@github.com"
-        git config --local user.name "GitHub Action"
+        git config --local user.name "GitHub Action Bot"
         git add data/
         if git diff --staged --quiet; then
-          echo "No changes to commit"
+          echo "ℹ️ No changes to commit"
         else
-          git commit -m "Update posted logs - $(date '+%Y-%m-%d %H:%M:%S')"
+          git commit -m "📝 Update posted logs - $(date '+%Y-%m-%d %H:%M:%S UTC')"
           git push
+          echo "✅ Changes committed and pushed"
         fi
+    
+    - name: 📈 Upload logs as artifacts
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: tumblr-logs-${{ github.run_number }}
+        path: |
+          data/posted_logs.csv
+          data/pending_posts.csv
+        retention-days: 30
 
   cleanup-old-logs:
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'schedule' }}
+    if: github.event_name == 'schedule' && github.event.schedule == '0 9 * * *'
     
     steps:
-    - name: Checkout repository
+    - name: 📥 Checkout repository
       uses: actions/checkout@v4
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
     
-    - name: Clean up old logs (keep last 1000 entries)
+    - name: 🧹 Clean up old logs (keep last 1000 entries)
       run: |
         if [ -f "data/posted_logs.csv" ]; then
-          head -
+          echo "🧹 Cleaning up old log entries..."
+          
+          # Keep header and last 1000 entries
+          head -1 data/posted_logs.csv > data/posted_logs_temp.csv
+          tail -n +2 data/posted_logs.csv | tail -1000 >> data/posted_logs_temp.csv
+          mv data/posted_logs_temp.csv data/posted_logs.csv
+          
+          echo "✅ Log cleanup completed"
+        else
+          echo "ℹ️ No log file to clean up"
+        fi
+    
+    - name: 🧹 Clean up old tokens (optional security measure)
+      run: |
+        # Remove token files older than 30 days for security
+        find data/ -name "*.json" -type f -mtime +30 -delete 2>/dev/null || true
+        echo "🔐 Old token cleanup completed"
+    
+    - name: 💾 Commit cleanup changes
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action Bot"
+        git add data/
+        if git diff --staged --quiet; then
+          echo "ℹ️ No cleanup changes to commit"
+        else
+          git commit -m "🧹 Cleanup old logs - $(date '+%Y-%m-%d %H:%M:%S UTC')"
+          git push
+          echo "✅ Cleanup changes committed"
+        fi
+
+  health-check:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+    needs: [post-to-tumblr]
+    if: always()
+    
+    steps:
+    - name: 📥 Checkout repository
+      uses: actions/checkout@v4
+    
+    - name: 📊 Generate health report
+      run: |
+        echo "🏥 Tumblr Automation Health Check"
+        echo "================================"
+        echo "Date: $(date)"
+        echo "Last run: ${{ github.run_number }}"
+        
+        if [ -f "data/posted_logs.csv" ]; then
+          echo "📄 Log file exists: ✅"
+          echo "Total posts logged: $(tail -n +2 data/posted_logs.csv 2>/dev/null | wc -l || echo '0')"
+          
+          # Check recent success rate
+          recent_posts=$(tail -20 data/posted_logs.csv 2>/dev/null | tail -n +2 || echo "")
+          if [ -n "$recent_posts" ]; then
+            success_count=$(echo "$recent_posts" | grep -c "True" || echo "0")
+            total_count=$(echo "$recent_posts" | wc -l)
+            echo "Recent success rate: $success_count/$total_count"
+          fi
+        else
+          echo "📄 Log file exists: ❌"
+        fi
+        
+        if [ -f "data/pending_posts.csv" ]; then
+          echo "📋 Pending posts file exists: ✅"
+          pending_count=$(tail -n +2 data/pending_posts.csv 2>/dev/null | grep -c "False" || echo "0")
+          echo "Pending posts: $pending_count"
+        else
+          echo "📋 Pending posts file exists: ❌"
+        fi
+        
+        echo "🎯 Workflow status: ${{ needs.post-to-tumblr.result }}"
