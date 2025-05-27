@@ -1,6 +1,4 @@
 #!/usr/bin/env python3
-# Helper script to get Tumblr OAuth tokens
-# Run this locally to get your OAuth tokens for the GitHub secrets
 
 import os
 import requests
