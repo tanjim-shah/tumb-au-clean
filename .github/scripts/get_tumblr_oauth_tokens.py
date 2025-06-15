@@ -3,7 +3,7 @@ from urllib.parse import parse_qs
 
 # --- Step 1: Get these from https://www.tumblr.com/oauth/apps ---
 consumer_key = 'npx1m3sT82DEo6rFoNblOCtNCC6aQU2TUN2Y1KmK6sjGzy7Q3'
-consumer_secret = 'muttOXXW8IzFIoR4K5mG9xVV1Z0D8YWnipLvA0HczpsmCAyTnE'
+consumer_secret = 'YOUR_CONSUMER_SECRET'
 
 # --- Step 2: Create a TumblrRestClient ---
 client = pytumblr.TumblrRestClient(consumer_key, consumer_secret)

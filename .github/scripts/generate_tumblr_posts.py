@@ -200,4 +200,41 @@ def main():
             title = ' '.join(tags).replace('-', ' ').title()
 
             # Add to successful list
-            generated_posts.append((url
+            generated_posts.append((url, title, post_content, tags))
+            successful_urls.append(url)
+            print(f"Successfully generated post for: {url}")
+            print(f"Generated title: {title}")
+            print(f"Generated tags: {', '.join(tags)}")
+            print(f"Post content preview: {post_content[:150]}...")
+            
+        except Exception as e:
+            print(f"Error processing URL '{url}': {e}")
+            continue
+        
+        # Add a small delay between requests
+        if i < len(urls_to_process):
+            sleep_time = random.randint(2, 5)
+            print(f"Waiting {sleep_time} seconds before next URL...")
+            time.sleep(sleep_time)
+    
+    # Save generated posts to pending file
+    if generated_posts:
+        save_to_pending_posts(generated_posts)
+    
+    # Update URL files
+    if successful_urls:
+        # Remove processed URLs from the original file
+        remaining_urls = [url for url in all_urls if url not in successful_urls]
+        write_urls_to_file(remaining_urls)
+        
+        # Add processed URLs to the processed file
+        append_processed_urls(successful_urls)
+        
+        print(f"Updated URL files: removed {len(successful_urls)} processed URLs")
+    
+    print(f"Tumblr post generation completed at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"Generated {len(generated_posts)} posts out of {len(urls_to_process)} URLs")
+    print(f"Posts will be scheduled every 3 hours starting from the next hour")
+
+if __name__ == "__main__":
+    main()

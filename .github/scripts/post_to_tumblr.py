@@ -12,19 +12,24 @@ def post_to_tumblr():
     and then removes it from the pending file.
     """
     pending_posts_file = "data/pending_posts.csv"
-    posted_logs_file = "data/posted_logs.csv"
 
     try:
-        # --- 1. Get Credentials from Environment Variables ---
-        consumer_key = os.environ['TUMBLR_CONSUMER_KEY']
-        consumer_secret = os.environ['TUMBLR_CONSUMER_SECRET']
-        oauth_token = os.environ['TUMBLR_OAUTH_TOKEN']
-        oauth_secret = os.environ['TUMBLR_OAUTH_TOKEN_SECRET']
-        blog_name = os.environ.get("TUMBLR_BLOG_NAME", "your-blog-name") # Set your blog name
+        # --- 1. Get Credentials and Check for Missing Secrets ---
+        consumer_key = os.environ.get('TUMBLR_CONSUMER_KEY')
+        consumer_secret = os.environ.get('TUMBLR_CONSUMER_SECRET')
+        oauth_token = os.environ.get('TUMBLR_OAUTH_TOKEN')
+        oauth_secret = os.environ.get('TUMBLR_OAUTH_TOKEN_SECRET')
+        blog_name = os.environ.get("TUMBLR_BLOG_NAME")
 
         if not all([consumer_key, consumer_secret, oauth_token, oauth_secret, blog_name]):
-            print("Missing Tumblr API credentials in GitHub Secrets.")
-            return
+            print("Error: One or more required Tumblr API credentials are not set in your GitHub Secrets.")
+            print("Please check the following secrets in your repository's Settings > Secrets and variables > Actions:")
+            print("- TUMBLR_CONSUMER_KEY")
+            print("- TUMBLR_CONSUMER_SECRET")
+            print("- TUMBLR_OAUTH_TOKEN")
+            print("- TUMBLR_OAUTH_TOKEN_SECRET")
+            print("- TUMBLR_BLOG_NAME")
+            raise ValueError("Missing Tumblr API credentials.")
 
         # --- 2. Authenticate with Tumblr ---
         client = pytumblr.TumblrRestClient(
@@ -47,7 +52,6 @@ def post_to_tumblr():
         # --- 4. Get the next post to share ---
         post_to_share = pending_posts_df.iloc[0]
         
-        # These will now correctly read from the CSV
         post_id = post_to_share['id']
         title = post_to_share['title'] 
         url = post_to_share['url']
@@ -73,21 +77,16 @@ def post_to_tumblr():
         tumblr_post_id = response['id']
         print(f"Successfully posted to Tumblr. Post ID: {tumblr_post_id}")
 
-        # --- 6. Log the posted item and update CSVs ---
-        # (Your existing logic for updating CSVs and text files)
-        # For now, we will just remove the posted item from the pending list
-        
+        # --- 6. Remove the posted item from the pending list ---
         remaining_posts_df = pending_posts_df.iloc[1:]
         remaining_posts_df.to_csv(pending_posts_file, index=False)
         print(f"Removed post {post_id} from pending posts.")
 
-
-    except KeyError as e:
-        print(f"An error occurred: A required column is missing in your pending_posts.csv file: {e}")
-        print("Please ensure 'generate_tumblr_posts.py' is creating the 'title' column.")
+    except ValueError as e:
+        print(e)
         raise
     except Exception as e:
-        print(f"An error occurred: {e}")
+        print(f"An unexpected error occurred: {e}")
         raise
 
 if __name__ == "__main__":
