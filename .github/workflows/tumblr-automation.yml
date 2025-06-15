@@ -2,146 +2,40 @@ name: Tumblr Automation
 
 on:
   schedule:
-    # Generate posts daily at 9 AM UTC
-    - cron: '0 9 * * *'
-    # Post to Tumblr every 3 hours
-    - cron: '0 */3 * * *'
+    # Runs every 6 hours
+    - cron: '0 */6 * * *'
   workflow_dispatch:
-    inputs:
-      action:
-        description: 'Action to perform'
-        required: true
-        default: 'post'
-        type: choice
-        options:
-        - generate
-        - post
-        - both
 
 jobs:
-  generate-posts:
-    if: ${{ github.event_name == 'workflow_dispatch' && (github.event.inputs.action == 'generate' || github.event.inputs.action == 'both') || (github.event_name == 'schedule' && github.event.action == 'scheduled') }}
+  build-and-post:
     runs-on: ubuntu-latest
-    
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-      with:
-        token: ${{ secrets.GITHUB_TOKEN }}
-    
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.11'
-    
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install google-genai requests
-    
-    - name: Create data directory
-      run: mkdir -p data
-    
-    - name: Generate Tumblr posts
-      env:
-        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-      run: python .github/scripts/generate_tumblr_posts.py
-    
-    - name: Commit and push changes
-      run: |
-        git config --local user.email "action@github.com"
-        git config --local user.name "GitHub Action"
-        git add data/
-        if git diff --staged --quiet; then
-          echo "No changes to commit"
-        else
-          git commit -m "Add generated Tumblr posts - $(date '+%Y-%m-%d %H:%M:%S')"
-          git push
-        fi
+      - name: Checkout Repository
+        uses: actions/checkout@v3
 
-  post-to-tumblr:
-    # Removed the needs dependency to allow independent execution
-    if: ${{ github.event_name == 'workflow_dispatch' && (github.event.inputs.action == 'post' || github.event.inputs.action == 'both') || github.event_name == 'schedule' }}
-    runs-on: ubuntu-latest
-    
-    steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-      with:
-        token: ${{ secrets.GITHUB_TOKEN }}
-    
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.11'
-    
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install requests
-    
-    - name: Post to Tumblr
-      env:
-        TUMBLR_CONSUMER_KEY: ${{ secrets.TUMBLR_CONSUMER_KEY }}
-        TUMBLR_CONSUMER_SECRET: ${{ secrets.TUMBLR_CONSUMER_SECRET }}
-        TUMBLR_OAUTH_TOKEN: ${{ secrets.TUMBLR_OAUTH_TOKEN }}
-        TUMBLR_OAUTH_TOKEN_SECRET: ${{ secrets.TUMBLR_OAUTH_TOKEN_SECRET }}
-        TUMBLR_BLOG_NAME: ${{ secrets.TUMBLR_BLOG_NAME }}
-        EMAIL_USER: limon.working@gmail.com
-        EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
-        NOTIFICATION_EMAIL: beacleaner0@gmail.com
-        SMTP_SERVER: smtp.gmail.com
-        SMTP_PORT: 587
-      run: python .github/scripts/post_to_tumblr.py
-    
-    - name: Commit and push changes
-      run: |
-        git config --local user.email "action@github.com"
-        git config --local user.name "GitHub Action"
-        git add data/
-        if git diff --staged --quiet; then
-          echo "No changes to commit"
-        else
-          git commit -m "Update posted logs - $(date '+%Y-%m-%d %H:%M:%S')"
-          git push
-        fi
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
 
-  cleanup-old-logs:
-    runs-on: ubuntu-latest
-    # This will run on both scheduled events, but only clean up once per day
-    if: ${{ github.event_name == 'schedule' }}
-    
-    steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-      with:
-        token: ${{ secrets.GITHUB_TOKEN }}
-    
-    - name: Clean up old logs (keep last 1000 entries)
-      run: |
-        if [ -f "data/posted_logs.csv" ]; then
-          # Keep header + last 1000 entries
-          head -n 1 data/posted_logs.csv > temp_log.csv
-          tail -n 1000 data/posted_logs.csv >> temp_log.csv
-          mv temp_log.csv data/posted_logs.csv
-          echo "Cleaned up old log entries"
-        fi
-        
-        if [ -f "data/processed_urls.txt" ]; then
-          # Keep last 1000 URLs
-          tail -n 1000 data/processed_urls.txt > temp_urls.txt
-          mv temp_urls.txt data/processed_urls.txt
-          echo "Cleaned up old processed URLs"
-        fi
-    
-    - name: Commit cleanup changes
-      run: |
-        git config --local user.email "action@github.com"
-        git config --local user.name "GitHub Action"
-        git add data/
-        if git diff --staged --quiet; then
-          echo "No changes to commit"
-        else
-          git commit -m "Clean up old logs - $(date '+%Y-%m-%d %H:%M:%S')"
-          git push
-        fi
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytumblr pandas
+
+      - name: Run Tumblr Post Script
+        # This is the crucial step where you pass the secrets to the script
+        env:
+          TUMBLR_CONSUMER_KEY: ${{ secrets.TUMBLR_CONSUMER_KEY }}
+          TUMBLR_CONSUMER_SECRET: ${{ secrets.TUMBLR_CONSUMER_SECRET }}
+          TUMBLR_OAUTH_TOKEN: ${{ secrets.TUMBLR_OAUTH_TOKEN }}
+          TUMBLR_OAUTH_SECRET: ${{ secrets.TUMBLR_OAUTH_SECRET }}
+        run: python .github/scripts/post_to_tumblr.py
+
+      - name: Commit and push if changed
+        # (Your existing logic for committing changes back to the repo)
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --quiet && git diff --staged --quiet || (git commit -m "Update Tumblr data"; git push)
