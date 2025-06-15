@@ -1,20 +1,30 @@
+#!/usr/bin/env python3
+# .github/scripts/post_to_tumblr.py
+
 import os
 import pytumblr
 import pandas as pd
+from datetime import datetime
 
 def post_to_tumblr():
     """
-    Reads a post from the pending_posts.csv file and posts it to Tumblr.
-    Updates the processed URLs and logs the post.
+    Reads the next post from pending_posts.csv, posts it to Tumblr as a link post,
+    and then removes it from the pending file.
     """
+    pending_posts_file = "data/pending_posts.csv"
+    posted_logs_file = "data/posted_logs.csv"
+
     try:
         # --- 1. Get Credentials from Environment Variables ---
-        # These are set in the GitHub Actions workflow file from your repository's secrets
         consumer_key = os.environ['TUMBLR_CONSUMER_KEY']
         consumer_secret = os.environ['TUMBLR_CONSUMER_SECRET']
         oauth_token = os.environ['TUMBLR_OAUTH_TOKEN']
-        oauth_secret = os.environ['TUMBLR_OAUTH_SECRET']
-        blog_name = 'YOUR_TUMBLR_BLOG_NAME'  # <-- SET YOUR TUMBLR BLOG NAME HERE
+        oauth_secret = os.environ['TUMBLR_OAUTH_TOKEN_SECRET']
+        blog_name = os.environ.get("TUMBLR_BLOG_NAME", "your-blog-name") # Set your blog name
+
+        if not all([consumer_key, consumer_secret, oauth_token, oauth_secret, blog_name]):
+            print("Missing Tumblr API credentials in GitHub Secrets.")
+            return
 
         # --- 2. Authenticate with Tumblr ---
         client = pytumblr.TumblrRestClient(
@@ -24,28 +34,60 @@ def post_to_tumblr():
             oauth_secret
         )
 
-        # --- 3. Read the post data ---
-        pending_posts_df = pd.read_csv("data/pending_posts.csv")
+        # --- 3. Read the pending posts data ---
+        if not os.path.exists(pending_posts_file) or os.path.getsize(pending_posts_file) == 0:
+            print("No pending posts file found or file is empty.")
+            return
+            
+        pending_posts_df = pd.read_csv(pending_posts_file)
         if pending_posts_df.empty:
             print("No pending posts to share.")
             return
 
+        # --- 4. Get the next post to share ---
         post_to_share = pending_posts_df.iloc[0]
-        title = post_to_share['title']
+        
+        # These will now correctly read from the CSV
+        post_id = post_to_share['id']
+        title = post_to_share['title'] 
         url = post_to_share['url']
-        tags = post_to_share['tags'].split(',')
+        description = post_to_share['post_content']
+        tags_str = post_to_share.get('tags', '')
+        tags = [tag.strip() for tag in tags_str.split(',')] if tags_str else []
 
-        # --- 4. Create the post ---
+        # --- 5. Create the post on Tumblr ---
         print(f"Posting to Tumblr: {title}")
-        client.create_link(blog_name, title=title, url=url, tags=tags)
-        print("Successfully posted to Tumblr.")
+        response = client.create_link(
+            blog_name, 
+            title=title, 
+            url=url, 
+            description=description, 
+            tags=tags,
+            state="published"
+        )
+        
+        if "id" not in response:
+             print(f"Failed to post to Tumblr. Response: {response}")
+             raise Exception(f"Tumblr API Error: {response}")
 
-        # --- 5. Log the posted item and update CSVs ---
+        tumblr_post_id = response['id']
+        print(f"Successfully posted to Tumblr. Post ID: {tumblr_post_id}")
+
+        # --- 6. Log the posted item and update CSVs ---
         # (Your existing logic for updating CSVs and text files)
+        # For now, we will just remove the posted item from the pending list
+        
+        remaining_posts_df = pending_posts_df.iloc[1:]
+        remaining_posts_df.to_csv(pending_posts_file, index=False)
+        print(f"Removed post {post_id} from pending posts.")
 
+
+    except KeyError as e:
+        print(f"An error occurred: A required column is missing in your pending_posts.csv file: {e}")
+        print("Please ensure 'generate_tumblr_posts.py' is creating the 'title' column.")
+        raise
     except Exception as e:
         print(f"An error occurred: {e}")
-        # Re-raise the exception to make the GitHub Action fail
         raise
 
 if __name__ == "__main__":
